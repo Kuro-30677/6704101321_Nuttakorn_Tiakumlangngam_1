@@ -2,9 +2,12 @@
 import { test, expect, Page } from '@playwright/test';
 
 /** ---------- Bootstrapping ---------- **/
+const BASE = process.env.TEST_BASE_URL || 'http://localhost:9000';
 const gotoApp = async (page: Page) => {
-  await page.goto('http://localhost:9000/#/');                 // ← your app URL
-  await expect(page.locator('#q-app')).toBeVisible();          // Quasar root
+  await page.goto(`${BASE}
+    /#/`);                 // ← your app URL
+  // wait a bit longer for Quasar to mount in CI or on slow machines
+  await expect(page.locator('#q-app').first()).toBeVisible({ timeout: 15000 });          // Quasar root (pick first to avoid duplicate id strict-mode)
   await expect(page.locator('form')).toBeVisible();            // form is rendered
 };
 
@@ -49,12 +52,18 @@ test.describe('Quasar Form Input Validation', () => {
     await expect(messagesOf(page, 'Your name')).toContainText(NAME_EMPTY_REGEX);
 
     await nameInput(page).fill('John Doe');
+    // ensure blur so validation can run and animations complete
+    await nameInput(page).press('Tab');
 
     // Re-submit to progress validation and ensure name no longer shows an *error*.
     await submitBtn(page).click();
 
-    // Your UI keeps a neutral helper ("Name and surname"), so just ensure no error-like text.
-    await expect(messagesOf(page, 'Your name')).not.toContainText(/please|invalid|error/i);
+    // Robustly assert there are NO error-like messages for this field
+    await expect(
+      fieldByLabel(page, 'Your name')
+        .locator('.q-field__messages')
+        .filter({ hasText: /please|invalid|error/i })
+    ).toHaveCount(0, { timeout: 5000 });
   });
 
   test('should validate age input', async ({ page }) => {
